@@ -1,15 +1,6 @@
 (ns advent-of-code.day6-coordinate-search
   (:require [clojure.test :refer [is]]))
 
-(defn abs [x]
-  (if (pos? x)
-    x
-    (- x)))
-
-(defn x [point] (first point))
-
-(defn y [point] (second point))
-
 (def input
   (partition 2 [311, 74
                 240, 84
@@ -62,33 +53,41 @@
                 102, 227
                 194, 239]))
 
+(defn x [point] (first point))
+
+(defn y [point] (second point))
+
 (defn min-x [input] (->> input
-                         (map first)
+                         (map x)
                          (apply min)))
 
 (defn max-x [input] (->> input
-                         (map first)
+                         (map x)
                          (apply max)))
 
 (defn min-y [input] (->> input
-                         (map second)
+                         (map y)
                          (apply min)))
 
 (defn max-y [input] (->> input
-                         (map second)
+                         (map y)
                          (apply max)))
 
-(defn distance
-  {:test (fn []
-           (is (= (distance [1 0] [0 0]) 1))
-           (is (= (distance [0 0] [1 0]) 1))
-           (is (= (distance [1 1] [2 2]) 2))
-           (is (= (distance [2 2] [1 1]) 2)))}
-  [coord1 coord2]
-  (+ (abs (- (first coord1) (first coord2)))
-     (abs (- (second coord1) (second coord2)))))
+(defn abs [x] (if (pos? x)
+                x
+                (- x)))
 
-(def field
+(defn manhattan-distance
+  {:test (fn []
+           (is (= (manhattan-distance [1 0] [0 0]) 1))
+           (is (= (manhattan-distance [0 0] [1 0]) 1))
+           (is (= (manhattan-distance [1 1] [2 2]) 2))
+           (is (= (manhattan-distance [2 2] [1 1]) 2)))}
+  [coord1 coord2]
+  (+ (abs (- (x coord1) (x coord2)))
+     (abs (- (y coord1) (y coord2)))))
+
+(defn field [input]
   (for [x (range (min-x input) (max-x input))
         y (range (min-y input) (max-y input))]
     [x y]))
@@ -97,7 +96,7 @@
   (let [top-two-candidates-and-distances (->> candidates
                                               (map (fn [candidate]
                                                      {:point    candidate
-                                                      :distance (distance field-point candidate)}))
+                                                      :distance (manhattan-distance field-point candidate)}))
                                               (sort-by :distance)
                                               (take 2))]
     (if (not= (:distance (first top-two-candidates-and-distances))
@@ -120,9 +119,11 @@
       (<= (y point) (min-y input))
       (>= (y point) (max-y input))))
 
-(defn part1 ;5035
-  [input field]
-  (->> field
+(defn part1
+  {:test (fn [] (is (= (part1 input) 5035)))}
+  [input]
+  (->> input
+       (field)
        (pmap (fn [field-point]
                [field-point (closest-point field-point input)]))
        (group-by second)
@@ -131,19 +132,21 @@
        (remove (fn [[point closest-points]]
                  (some (fn [point] (point-out-of-bounds? point input)) closest-points)))
        (sort-by (comp count second))
-       (reverse)
-       (take 3)
-       (map (comp count second))))
+       (last)
+       (second)
+       (count)))
 
 (defn sum-distances-between-points
   [point points]
   (->> points
-       (map (partial distance point))
+       (map (partial manhattan-distance point))
        (reduce +)))
 
-(defn part2 ;35294
-  [input field]
-  (->> field
+(defn part2
+  {:test (fn [] (is (= (part2 input) 35294)))}
+  [input]
+  (->> input
+       (field)
        (pmap (fn [field-point]
                [field-point (sum-distances-between-points field-point input)]))
        (filter (fn [[field-point distance-sum]]
