@@ -52,7 +52,7 @@
        (first)
        (sum-metadata)))
 
-(defn part1 [input]
+(defn part2 [input]
   (->> input
        (process-node)
        (first)
