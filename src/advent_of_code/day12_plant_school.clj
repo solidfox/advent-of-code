@@ -18,43 +18,51 @@
        (re-matches #"^initial state: (.+)")
        (drop 1)
        (first)
-       (map vector (range 0 400))))
+       (map vector (range 0 400))
+       (filter (fn [[_ plant?]] (= plant? \#)))
+       (map first)
+       (into #{})))
 
 (defn spy [x] (println x) x)
 
-(defn prepare-space
-  {:test (fn [] (is (= (prepare-space [[1 \.]])
-                       [[-3 \.] [-2 \.] [-1 \.] [0 \.] [1 \.] [2 \.] [3 \.] [4 \.] [5 \.]])))}
-  [state]
-  (let [first-pot-index (ffirst state)
-        last-pot-index (first (last state))]
-    (concat (map vector (range (- first-pot-index 4) first-pot-index) (repeat \.))
-            state
-            (map vector (range (+ last-pot-index 1) (+ last-pot-index 5)) (repeat \.)))))
-
 (defn perform-rules
-  {:test (fn [] (is (= (perform-rules (map vector (range 1 6) [\.\.\#\.\.]) #{"..#.."}))))}
+  {:test (fn [] (is (= (perform-rules (parse-initial-state "initial state: #..") #{".#..."
+                                                                                   "...#."
+                                                                                   "..#.."})
+                       #{-1 0 1})))}
   [state rules]
-  (map (fn [a b c d e]
-         (let [string (apply str (map second [a b c d e]))]
-           (if (contains? rules string)
-             [(first c) \#]
-             [(first c) \.])))
-       state
-       (drop 1 state)
-       (drop 2 state)
-       (drop 3 state)
-       (drop 4 state)))
+  (let [plantless-of-interest (->> (map (fn [pot-index]
+                                          (range (- pot-index 4) (+ pot-index 5)))
+                                        state)
+                                   (apply concat)
+                                   (remove (partial contains? state)))
+        all-of-interest (concat state plantless-of-interest)]
+    (->> all-of-interest
+         (filter (fn [pot-index]
+                   (->> (range (- pot-index 2) (+ pot-index 3))
+                        (map (fn [pot-index] (if (contains? state pot-index) \# \.)))
+                        (apply str)
+                        (contains? rules))))
+         (into #{}))))
 
 (defn part1 [input]
   (time (let [rules (into #{} (parse-rules input))
               initial-state (parse-initial-state input)]
-          (->> (reduce (fn [state _iteration]
-                         (-> state
-                             (prepare-space)
-                             (perform-rules rules)))
+          (->> (reduce (fn [state iteration]
+                         (perform-rules state rules))
                        initial-state
                        (range 0 20))
-               (filter (fn [[_ plant]] (= plant \#)))
-               (map first)
                (reduce +)))))
+
+(defn part2 [input]
+  (time (let [rules (into #{} (parse-rules input))
+              initial-state (parse-initial-state input)]
+          (->> (reduce (fn [state iteration]
+                         (println)
+                         (println iteration
+                                  (apply min state)
+                                  (apply max state)
+                                  (reduce + state))
+                         (perform-rules state rules))
+                       initial-state
+                       (range 0 1000))))))
