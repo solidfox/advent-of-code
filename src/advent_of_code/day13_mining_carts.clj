@@ -42,19 +42,6 @@
                (str/join sample)
                (str/join pattern))))
 
-(comment (match [" | "
-                 "   "
-                 " + "]
-                [" | "
-                 "- -"
-                 " | "])
-         (match [" | "
-                 "   "
-                 " + "]
-                [" | "
-                 ". ."
-                 " | "]))
-
 (defn spy [x] (clojure.pprint/pprint x) x)
 
 (defn deduce-rail-char-for-coord
@@ -107,20 +94,24 @@
        "   "
        " . "] \|)))
 
-(defn update-position [cart carts]
-  (let [[x y] (:position cart)
-        new-position (condp = (:direction cart)
-                       \v [x (inc y)]
-                       \^ [x (dec y)]
-                       \< [(dec x) y]
-                       \> [(inc x) y])]
-    (cond-> cart
-            :always
-            (assoc :position
-                   new-position)
-            (some (fn [other-cart] (= (:position other-cart) new-position))
-                  carts)
-            (assoc :crashed new-position))))
+(defn update-position [cart]
+  (if (:crashed cart)
+    cart
+    (let [[x y] (:position cart)
+          new-position (condp = (:direction cart)
+                         \v [x (inc y)]
+                         \^ [x (dec y)]
+                         \< [(dec x) y]
+                         \> [(inc x) y])]
+      (assoc cart :position new-position))))
+
+(defn update-crashed [cart carts]
+  (cond-> cart
+          (some (fn [other-cart] (and (not (:crashed other-cart))
+                                      (not= (:origin other-cart) (:origin cart))
+                                      (= (:position other-cart) (:position cart))))
+                carts)
+          (assoc :crashed (:position cart))))
 
 (def turn-right
   (->> (map vector
@@ -152,23 +143,10 @@
                              2 (get turn-right (:direction cart)))
                         (:direction cart))]
     (cond-> cart
-            new-direction
+            :always
             (assoc :direction new-direction)
             (= track \+)
             (update :crossroads inc))))
-
-(defn tick [lines carts]
-  (->> carts
-       (sort-by (comp second :position))
-       (vec)
-       ((fn [carts]
-          (loop [index 0
-                 carts-state carts]
-            (if (< index (count carts-state))
-              (recur (inc index)
-                     (update carts-state index update-position carts-state))
-              carts-state))))
-       (map (partial update-direction lines))))
 
 (defn get-crashes
   [carts]
@@ -176,6 +154,24 @@
        (filter :crashed)
        (map :crashed)
        (into #{})))
+
+(defn tick [lines carts]
+  (->> carts
+       (sort-by (fn [cart] (str (-> cart :position second)
+                                ","
+                                (-> cart :position first))))
+       (vec)
+       ((fn [carts]
+          (loop [index 0
+                 carts-state carts]
+            (if (< index (count carts-state))
+              (recur (inc index)
+                     (as-> (update carts-state index update-position) $
+                           (map (fn [cart] (update-crashed cart $))
+                                $)
+                           (vec $)))
+              carts-state))))
+       (map (partial update-direction lines))))
 
 (defn spy-railroad [railroad]
   (doall (map println railroad))
@@ -220,4 +216,16 @@
         (let [new-carts (tick rail-map carts)]
           (recur new-carts
                  (get-crashes new-carts)))))))
+
+(defn part2
+  {:test (fn []
+           (is (= (part2 (str/split-lines "/>-<\\  \n|   |  \n| /<+-\\\n| | | v\n\\>+</ |\n  |   ^\n  \\<->/"))
+                  [6 4])))}
+  [input]
+  (let [[rail-map carts] (extract-carts input)]
+    (loop [carts carts]
+      (let [remaining-carts (remove :crashed carts)]
+        (if (= 1 (count remaining-carts))
+          (-> remaining-carts first :position)
+          (recur (tick rail-map carts)))))))
 
