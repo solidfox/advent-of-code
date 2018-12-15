@@ -1,4 +1,4 @@
-(ns advent-of-code.Day10-message-in-the-sky
+(ns advent-of-code.day10-message-in-the-sky
   (:require [clojure.string :as str]
             [clojure.set :refer [intersection union difference]]))
 
