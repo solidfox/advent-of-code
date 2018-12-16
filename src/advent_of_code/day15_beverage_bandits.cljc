@@ -1,6 +1,6 @@
 (ns advent-of-code.day15-beverage-bandits
   (:require [clojure.string :as str]
-            [clojure.set :refer [difference]]
+            [clojure.set :refer [difference union]]
             [clojure.test :refer [is]]
             [ysera.test :refer [is= is-not]]))
 
@@ -43,11 +43,12 @@
 (defn traversable? [state target-team coordinate]
   (and (= \. (get-coordinate (:dungeon state)
                              coordinate))
-       (not (some (fn [{team     :team
-                        position :position}]
-                    (and (not= team target-team)
-                         (= position coordinate)))
-                  (:actors state)))))
+       (or (nil? target-team)
+           (not (some (fn [{team     :team
+                            position :position}]
+                        (and (not= team target-team)
+                             (= position coordinate)))
+                      (:actors state))))))
 
 (defn other-team
   [team]
@@ -96,18 +97,18 @@
           (into #{} $)
           (difference $ processed-coordinates))))
 
-(defn resolve-path-from-back-pointers [back-pointers position]
-  (loop [path (list position)
-         current-path-coord position]
-    (let [previous-step (get back-pointers current-path-coord)]
-      (if (nil? previous-step)
-        path
-        (recur (conj path previous-step)
-               previous-step)))))
+(defn resolve-paths-from-back-pointers
+  [back-pointers position]
+  (if (empty? (get back-pointers position))
+    [[position]]
+    (apply concat
+           (for [parent (get back-pointers position)]
+             (for [path-to-parent (resolve-paths-from-back-pointers back-pointers parent)]
+               (conj path-to-parent position))))))
 
 
 (defn reading-order [coordinate-or-actor]
-  (str/join "," (reverse (get coordinate-or-actor :position coordinate-or-actor))))
+  (vec (reverse (get coordinate-or-actor :position coordinate-or-actor))))
 
 (defn get-actor [state actor-id]
   (reduce (fn [_ actor]
@@ -118,47 +119,103 @@
 
 (defn find-nearest-target
   {:test (fn []
-           (is (= (second (:path (find-nearest-target test-state
-                                                      [2 1])))
-                  [3 1]))
-           (is (= (second (:path (find-nearest-target test-state-2
-                                                      [2 1])))
-                  [3 1])))}
+           (is= (second (:path (find-nearest-target (create-state ["#######"
+                                                                   "#.E...#"
+                                                                   "#.###.#"
+                                                                   "#.#G..#"
+                                                                   "#.....#"
+                                                                   "#######"])
+                                                    [2 1])))
+                [3 1])
+           (is= (second (:path (find-nearest-target (create-state ["########"
+                                                                   "#......#"
+                                                                   "#.#E##.#"
+                                                                   "#.####.#"
+                                                                   "#.#G...#"
+                                                                   "#......#"
+                                                                   "########"])
+                                                    [3 4])))
+                [4 4])
+           (is= (second (:path (find-nearest-target (create-state ["################################"
+                                                                   "#################.....##########"
+                                                                   "#################..#.###########"
+                                                                   "#################.........######"
+                                                                   "##################......########"
+                                                                   "#################G.GG###########"
+                                                                   "###############...#..###########"
+                                                                   "###############......G..########"
+                                                                   "############..G.........########"
+                                                                   "##########.G.....G......########"
+                                                                   "##########......#.........#..###"
+                                                                   "##########...................###"
+                                                                   "#########G..G.#####....E.G.E..##"
+                                                                   "######..G....#######...........#"
+                                                                   "#######.....#########.........##"
+                                                                   "#######..#..#########.....#.####"
+                                                                   "##########..#########..G.##..###"
+                                                                   "###########G#########...E...E.##"
+                                                                   "#########.G.#########..........#"
+                                                                   "#########GG..#######.......##.E#"
+                                                                   "######.G......#####...##########"
+                                                                   "#...##..G..............#########"
+                                                                   "#...#...........###..E.#########"
+                                                                   "#.G.............###...##########"
+                                                                   "#................###############"
+                                                                   "##.........E.....###############"
+                                                                   "###.#..............#############"
+                                                                   "###..G........E.....############"
+                                                                   "###......E..........############"
+                                                                   "###......#....#E#...############"
+                                                                   "###....####.#...##.#############"
+                                                                   "################################"])
+                                                    [17 9])))
+                [18 9])
+           (is= (second (:path (find-nearest-target test-state
+                                                    [2 1])))
+                [3 1])
+           (is= (second (:path (find-nearest-target test-state-2
+                                                    [2 1])))
+                [3 1]))}
   [state actor-id]
   (let [actor (get-actor state actor-id)
         target-team (other-team (:team actor))
         candidate-targets (->> (:actors state)
-                               (filter (fn [actor] (= (:team actor) target-team))))]
-    (when (not (empty? candidate-targets))
+                               (filter (fn [actor] (= (:team actor) target-team))))
+        candidate-destinations (apply concat (for [candidate-target candidate-targets]
+                                               (get-adjacent-coordinates state {:coordinate (:position candidate-target)})))]
+    (when (not (empty? candidate-destinations))
       (loop [processed-coords #{(:position actor)}
              fringe-coordinates #{(:position actor)}
              back-pointers {}]
         (when (not-empty fringe-coordinates)
-          (let [[new-processed-coords new-fringe new-back-pointers]
-                (reduce (fn [[processed-coords new-fringe back-pointers] fringe-coord]
+          (let [[new-fringe new-back-pointers]
+                (reduce (fn [[new-fringe back-pointers] fringe-coord]
                           (let [adjacents (get-adjacent-coordinates state {:coordinate            fringe-coord
                                                                            :processed-coordinates processed-coords
                                                                            :target-team           target-team})]
-                            [(reduce conj processed-coords adjacents)
-                             (reduce conj new-fringe adjacents)
-                             (reduce (fn [back-pointers adjacent] (assoc back-pointers adjacent fringe-coord))
+                            [(reduce conj new-fringe adjacents)
+                             (reduce (fn [back-pointers adjacent] (update back-pointers adjacent conj fringe-coord))
                                      back-pointers
                                      adjacents)]))
-                        [processed-coords #{} back-pointers]
+                        [#{} back-pointers]
                         (sort-by reading-order
                                  fringe-coordinates))
-                targets-in-fringe
-                (->> candidate-targets
-                     (filter (fn [candidate-target]
-                               (contains? new-fringe (:position candidate-target)))))]
-            (if (not (empty? targets-in-fringe))
-              (->> targets-in-fringe
+                destinations-in-fringe
+                (->> candidate-destinations
+                     (filter (fn [candidate-destination]
+                               (contains? new-fringe candidate-destination))))]
+            (if (not (empty? destinations-in-fringe))
+              (->> destinations-in-fringe
                    (sort-by reading-order)
                    (first)
-                   ((fn [target]
-                      {:target target
-                       :path   (resolve-path-from-back-pointers new-back-pointers (:position target))})))
-              (recur new-processed-coords
+                   ((fn [destination]
+                      (let [paths (resolve-paths-from-back-pointers new-back-pointers destination)]
+                        {:target destination
+                         :paths  paths
+                         :path   (->> paths
+                                      (sort-by (fn [path] (reading-order (second path))))
+                                      (first))}))))
+              (recur (union processed-coords new-fringe)
                      new-fringe
                      new-back-pointers))))))))
 
