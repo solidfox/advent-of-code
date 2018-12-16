@@ -241,17 +241,19 @@
                       :hp)
                   197)))}
   [state actor-id]
-  (if (not (get-actor state actor-id))
-    state
-    (if-let [initially-attackable-target (find-attackable-target state actor-id)]
-      (attack-actor state (:origin initially-attackable-target))
-      (if-let [{path-to-nearest-target :path} (find-nearest-target state actor-id)]
-        (as-> state $state
-              (move-actor $state actor-id (second path-to-nearest-target))
-              (if-let [attackable-target (find-attackable-target $state actor-id)]
-                (attack-actor $state (:origin attackable-target))
-                $state))
-        state))))
+  (if (= 1 (n-teams state))
+    (reduced (assoc state :end-game true))
+    (if (not (get-actor state actor-id))
+      state
+      (if-let [initially-attackable-target (find-attackable-target state actor-id)]
+        (attack-actor state (:origin initially-attackable-target))
+        (if-let [{path-to-nearest-target :path} (find-nearest-target state actor-id)]
+          (as-> state $state
+                (move-actor $state actor-id (second path-to-nearest-target))
+                (if-let [attackable-target (find-attackable-target $state actor-id)]
+                  (attack-actor $state (:origin attackable-target))
+                  $state))
+          state)))))
 
 (defn enact-round
   {:test (fn [] (as-> (enact-round test-state-3) $
@@ -286,6 +288,14 @@
                         "#######"])
                 36334)
            (is= (part1 ["#######"
+                        "#E..EG#"
+                        "#.#G.E#"
+                        "#E.##E#"
+                        "#G..#.#"
+                        "#..E#.#"
+                        "#######"])
+                39514)
+           (is= (part1 ["#######"
                         "#.G...#"
                         "#...EG#"
                         "#.#.#G#"
@@ -302,13 +312,23 @@
                         "#######"])
                 27755)
            (is= (part1 ["#######"
-                        "#E..EG#"
-                        "#.#G.E#"
-                        "#E.##E#"
-                        "#G..#.#"
-                        "#..E#.#"
+                        "#.E...#"
+                        "#.#..G#"
+                        "#.###.#"
+                        "#E#G#G#"
+                        "#...#G#"
                         "#######"])
-                39514))}
+                28944)
+           (is= (part1 ["#########"
+                        "#G......#"
+                        "#.E.#...#"
+                        "#..##..G#"
+                        "#...##..#"
+                        "#...#...#"
+                        "#.G...G.#"
+                        "#.....G.#"
+                        "#########"])
+                18740))}
 
   [dungeon]
   (let [state (create-state dungeon)]
@@ -317,10 +337,14 @@
       (println rounds)
       (clojure.pprint/pprint (sort-by reading-order (:actors state)))
       (println (visualize-state state))
-      (if (= 2 (n-teams state))
-        (recur (enact-round state)
-               (inc rounds))
-        (* rounds (->> state
-                       :actors
-                       (map :hp)
-                       (reduce +)))))))
+      (let [next-state (enact-round state)]
+        (if (:end-game next-state)
+          (do
+            (clojure.pprint/pprint (sort-by reading-order (:actors next-state)))
+            (println (visualize-state next-state))
+            (* rounds (->> next-state
+                           :actors
+                           (map :hp)
+                           (reduce +))))
+          (recur next-state
+                 (inc rounds)))))))
