@@ -14,25 +14,27 @@
 
 (defn create-state
   {:test (fn [] (create-state dungeon))}
-  [dungeon]
-  (->> dungeon
-       (map-indexed (fn [y row]
-                      (->> row
-                           (map-indexed vector)
-                           (reduce (fn [[clean-row actors] [x char]]
-                                     [(conj clean-row (if (is-actor? char) \. char))
-                                      (if (is-actor? char)
-                                        (conj actors {:origin   [x y]
-                                                      :position [x y]
-                                                      :team     char
-                                                      :hp       200})
-                                        actors)])
-                                   [[] []]))))
-       ((fn [rows-with-actors]
-          {:dungeon (vec (map (fn [[row _]] (apply str row))
-                              rows-with-actors))
-           :actors  (vec (apply concat
-                                (map second rows-with-actors)))}))))
+  [dungeon & [elf-power]]
+  (let [elf-power (or elf-power 3)]
+    (->> dungeon
+         (map-indexed (fn [y row]
+                        (->> row
+                             (map-indexed vector)
+                             (reduce (fn [[clean-row actors] [x char]]
+                                       [(conj clean-row (if (is-actor? char) \. char))
+                                        (if (is-actor? char)
+                                          (conj actors {:origin   [x y]
+                                                        :position [x y]
+                                                        :team     char
+                                                        :hp       200})
+                                          actors)])
+                                     [[] []]))))
+         ((fn [rows-with-actors]
+            {:dungeon   (vec (map (fn [[row _]] (apply str row))
+                                  rows-with-actors))
+             :actors    (vec (apply concat
+                                    (map second rows-with-actors)))
+             :elf-power elf-power})))))
 
 (defn get-coordinate [dungeon [x y]]
   (if (or (< x 0) (< y 0)
@@ -238,13 +240,15 @@
 (defn alive? [actor]
   (>= (:hp actor) 0))
 
-(defn attack-actor [state actor-id-to-attack]
+(defn attack-actor [state actor-id-to-attack actor-id-attacking]
   (update state :actors
           (fn [actors]
             (->> actors
                  (map (fn [actor]
                         (if (= (:origin actor) actor-id-to-attack)
-                          (update actor :hp - 3)
+                          (update actor :hp - (if (= (:team (get-actor state actor-id-attacking)) \E)
+                                                (:elf-power state)
+                                                3))
                           actor)))
                  (filter alive?)))))
 
@@ -253,22 +257,33 @@
     actor-b
     actor-a))
 
-(def attackable-state (create-state ["#######"
-                                     "#.EG..#"
-                                     "#.G...#"
-                                     "#.....#"
-                                     "#######"]))
-
 (defn find-attackable-target
   {:test (fn []
-           (is (= (:position (find-attackable-target (attack-actor attackable-state
-                                                                   (nth (:actors attackable-state) 2))
-                                                     (:origin (first (:actors attackable-state)))))
+           (is (= (:position (find-attackable-target (create-state ["#########"
+                                                                    "#.......#"
+                                                                    "#GE.#...#"
+                                                                    "#.G##...#"
+                                                                    "#...##..#"
+                                                                    "#...#...#"
+                                                                    "#.......#"
+                                                                    "#.......#"
+                                                                    "#########"])
+                                                     [2 2]))
+                  [1 2]))
+           (is (= (:position (find-attackable-target (attack-actor (create-state ["#######"
+                                                                                  "#.EG..#"
+                                                                                  "#.G...#"
+                                                                                  "#.....#"
+                                                                                  "#######"])
+                                                                   [2 2]
+                                                                   [2 1])
+                                                     [2 1]))
                   [2 2])))}
   [state attacking-actor-id]
   (let [attacking-actor (get-actor state attacking-actor-id)]
     (as-> attacking-actor $
           (get-adjacent-coordinates state {:actor $})
+          (sort-by reading-order $)
           (reduce (fn [actor-to-attack coordinate]
                     (let [candidate-actor (get-actor-at-position state coordinate)]
                       (if (= (:team candidate-actor)
@@ -303,12 +318,12 @@
     (if (not (get-actor state actor-id))
       state
       (if-let [initially-attackable-target (find-attackable-target state actor-id)]
-        (attack-actor state (:origin initially-attackable-target))
+        (attack-actor state (:origin initially-attackable-target) actor-id)
         (if-let [{path-to-nearest-target :path} (find-nearest-target state actor-id)]
           (as-> state $state
                 (move-actor $state actor-id (second path-to-nearest-target))
                 (if-let [attackable-target (find-attackable-target $state actor-id)]
-                  (attack-actor $state (:origin attackable-target))
+                  (attack-actor $state (:origin attackable-target) actor-id)
                   $state))
           state)))))
 
@@ -386,7 +401,6 @@
                         "#.....G.#"
                         "#########"])
                 18740))}
-
   [dungeon]
   (let [state (create-state dungeon)]
     (loop [state state
@@ -404,4 +418,78 @@
                            (map :hp)
                            (reduce +))))
           (recur next-state
+                 (inc rounds)))))))
+
+(defn count-elves [state]
+  (->> state
+     :actors
+     (map :team)
+     (filter (partial = \E))
+     (count)))
+
+(defn part2
+  {:test (fn []
+           (is= (part2 ["#######"
+                        "#.G...#"
+                        "#...EG#"
+                        "#.#.#G#"
+                        "#..G#E#"
+                        "#.....#"
+                        "#######"])
+                4988)
+           (is= (part2 ["#######"
+                        "#E.G#.#"
+                        "#.#G..#"
+                        "#G.#.G#"
+                        "#G..#.#"
+                        "#...E.#"
+                        "#######"])
+                3478)
+           (is= (part2 ["#######"
+                        "#.E...#"
+                        "#.#..G#"
+                        "#.###.#"
+                        "#E#G#G#"
+                        "#...#G#"
+                        "#######"])
+                6474)
+           (is= (part2 ["#########"
+                        "#G......#"
+                        "#.E.#...#"
+                        "#..##..G#"
+                        "#...##..#"
+                        "#...#...#"
+                        "#.G...G.#"
+                        "#.....G.#"
+                        "#########"])
+                1140))}
+  [dungeon]
+  (let [state (create-state dungeon)
+        n-elves (count-elves state)]
+    (loop [elf-power 4
+           state (create-state dungeon elf-power)
+           rounds 0]
+      ;(println)
+      ;(println rounds)
+      ;(clojure.pprint/pprint (sort-by reading-order (:actors state)))
+      ;(println (visualize-state state))
+      (let [next-state (enact-round state)]
+        (if (:end-game next-state)
+          (do
+            ;(clojure.pprint/pprint (sort-by reading-order (:actors next-state)))
+            (println "Power " elf-power " Elves left " (count-elves next-state) "/" n-elves)
+            (if (= (count-elves next-state) n-elves)
+              (do
+                (println rounds)
+                (clojure.pprint/pprint (sort-by reading-order (:actors next-state)))
+                (println (visualize-state next-state))
+                (* rounds (->> next-state
+                               :actors
+                               (map :hp)
+                               (reduce +))))
+              (recur (inc elf-power)
+                     (create-state dungeon (inc elf-power))
+                     0)))
+          (recur elf-power
+                 next-state
                  (inc rounds)))))))
